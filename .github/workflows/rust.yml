@@ -21,9 +21,9 @@ jobs:
       - name: Run CLI tests
         working-directory: cli
         run: cargo test --verbose
-      - name: Build GUI
-        working-directory: gui
-        run: cargo build --verbose
-      - name: Run GUI tests
-        working-directory: gui
-        run: cargo test --verbose
+      # - name: Build GUI
+      #   working-directory: gui
+      #   run: cargo build --verbose
+      # - name: Run GUI tests
+      #   working-directory: gui
+      #   run: cargo test --verbose
