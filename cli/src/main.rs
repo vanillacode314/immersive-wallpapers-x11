@@ -1,3 +1,4 @@
+#![feature(iter_array_chunks)]
 use clap::Parser;
 use image::imageops;
 use image::io::Reader as ImageReader;
@@ -11,17 +12,24 @@ struct Args {
     /// Image Path
     #[arg(short, long)]
     file_path: String,
+
+    /// List of bezels in mm separated by ; and each values in format left_bezel,top_bezel in order
+    /// of your monitors from left to right
+    #[arg(short, long, default_value = "")]
+    bezels: String,
 }
 
-#[derive(Debug)]
 struct Monitor {
     name: String,
     pixel_width: u32,
     pixel_height: u32,
+    #[allow(dead_code)] // would come in handy for edge cases that are yet not taken into account
     physical_width: u32,
     physical_height: u32,
     x: u32,
     y: u32,
+    bezel_x: u32,
+    bezel_y: u32,
 }
 
 impl Monitor {
@@ -32,51 +40,50 @@ impl Monitor {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
+
     let output = Command::new("xrandr")
         .arg("--query")
         .output()
         .expect("failed to execute xrandr");
-
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let monitors = parse_monitors(stdout.split('\n'));
 
-    let total_width = monitors
-        .iter()
-        .map(|monitor| monitor.pixel_width)
-        .sum::<u32>();
+    let monitors = parse_monitors(stdout.split('\n'), &args.bezels);
     let min_dpi = monitors
         .iter()
         .map(|monitor| monitor.dpi())
         .min_by(|a, b| a.total_cmp(b))
         .expect("failed to get min dpi");
+    let total_width = monitors
+        .iter()
+        .map(|monitor| monitor.pixel_width + monitor.bezel_x * 2)
+        .sum::<u32>();
     let max_height = monitors
         .iter()
-        .map(|monitor| monitor.pixel_height)
+        .map(|monitor| monitor.pixel_height + monitor.bezel_y)
         .max()
         .expect("failed to get max height");
 
     let dir = tempdir()?;
-    // let file_path = dir.path().join(format!("{}.png", "test"));
     let img = ImageReader::open(&args.file_path)?
         .decode()?
         .resize_to_fill(total_width, max_height, imageops::FilterType::Lanczos3);
-    // img.save(&file_path)?;
-    // Command::new("nsxiv").arg(&file_path).output()?;
-
-    for monitor in monitors {
+    for monitor in monitors.iter() {
         let scaling_factor = monitor.dpi() / min_dpi;
         let width = monitor.pixel_width;
         let height = monitor.pixel_height;
         let scaled_height = (height as f64 * scaling_factor) as u32;
         let scaled_width = (width as f64 * scaling_factor) as u32;
 
-        // println!("{} {{ height: {} }}, img_height: {}", monitor.name, monitor.pixel_height, scaled_height);
+        println!(
+            "{} {{ height: {} }}, scaling_factor: {}",
+            monitor.name, monitor.pixel_height, scaling_factor
+        );
         let file_path = dir.path().join(format!("{}.png", monitor.name));
         img.crop_imm(monitor.x, monitor.y, width, height)
             .resize_to_fill(scaled_width, scaled_height, imageops::FilterType::Lanczos3)
             .crop_imm(
                 0,
-                (monitor.y as f64 * scaling_factor as f64) as u32,
+                (monitor.y as f64 * scaling_factor as f64) as u32 + monitor.bezel_y,
                 width,
                 height,
             )
@@ -92,11 +99,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn parse_monitors<'i, I>(monitors: I) -> Vec<Monitor>
+fn parse_monitors<'i, I>(monitors: I, bezels: &str) -> Vec<Monitor>
 where
     I: IntoIterator<Item = &'i str>,
 {
     let mut monitor_structs: Vec<Monitor> = Vec::new();
+    let mut bezels = bezels.split(';');
     for monitor in monitors.into_iter() {
         if monitor.contains(" connected ") {
             let monitor = monitor.split(' ').collect::<Vec<&str>>();
@@ -119,7 +127,7 @@ where
             let dimensions: &str;
             let positions: &str;
             match pixel_box {
-                None => continue,
+                None => panic!("malformed modeline"),
                 Some(_box) => {
                     dimensions = _box.0;
                     positions = _box.1;
@@ -153,6 +161,16 @@ where
                 .parse::<u32>()
                 .expect("malformed y");
 
+            let [bezel_x, bezel_y] = if let Some(value) = bezels.next() {
+                value
+                    .split(',')
+                    .array_chunks::<2>()
+                    .next()
+                    .unwrap_or(["0", "0"])
+            } else {
+                ["0", "0"]
+            }.map(|value| value.parse::<u32>().expect("malformed bezel value"));
+
             monitor_structs.push(Monitor {
                 name,
                 pixel_width,
@@ -161,6 +179,8 @@ where
                 physical_height,
                 x,
                 y,
+                bezel_x,
+                bezel_y,
             });
         }
     }
