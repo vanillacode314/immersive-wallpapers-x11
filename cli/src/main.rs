@@ -20,6 +20,8 @@ struct Monitor {
     pixel_height: u32,
     physical_width: u32,
     physical_height: u32,
+    x: u32,
+    y: u32,
 }
 
 impl Monitor {
@@ -61,7 +63,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // img.save(&file_path)?;
     // Command::new("nsxiv").arg(&file_path).output()?;
 
-    let mut x_offset: u32 = 0;
     for monitor in monitors {
         let scaling_factor = monitor.dpi() / min_dpi;
         let width = monitor.pixel_width;
@@ -69,11 +70,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let scaled_height = (height as f64 * scaling_factor) as u32;
         let scaled_width = (width as f64 * scaling_factor) as u32;
 
-        println!("{} {{ height: {} }}, img_height: {}", monitor.name, monitor.pixel_height, scaled_height);
+        // println!("{} {{ height: {} }}, img_height: {}", monitor.name, monitor.pixel_height, scaled_height);
         let file_path = dir.path().join(format!("{}.png", monitor.name));
-        img.crop_imm(x_offset, max_height - height, width, height)
+        img.crop_imm(monitor.x, monitor.y, width, height)
             .resize_to_fill(scaled_width, scaled_height, imageops::FilterType::Lanczos3)
-            .crop_imm(0, scaled_height - height, width, height)
+            .crop_imm(
+                0,
+                (monitor.y as f64 * scaling_factor as f64) as u32,
+                width,
+                height,
+            )
             .save(&file_path)?;
 
         Command::new("xwallpaper")
@@ -82,8 +88,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .arg("--maximize")
             .arg(&file_path)
             .output()?;
-
-        x_offset += (width as f64 / scaling_factor) as u32;
     }
     Ok(())
 }
@@ -97,45 +101,66 @@ where
         if monitor.contains(" connected ") {
             let monitor = monitor.split(' ').collect::<Vec<&str>>();
             let name = monitor[0].to_string();
-            let _box = monitor[2]
-                .split_once('+')
-                .or_else(|| monitor[3].split_once('+'));
-            let __real_box = monitor.iter().rev().collect::<Vec<_>>();
-            let _real_box = __real_box.chunks(3).next().unwrap();
-            let real_height = _real_box[0];
-            let real_height = real_height[0..real_height.len() - 2]
+
+            let _physical_box = monitor.iter().rev().collect::<Vec<_>>();
+            let physical_box = _physical_box.chunks(3).next().unwrap();
+            let physical_height = physical_box[0];
+            let physical_height = physical_height[0..physical_height.len() - 2]
                 .parse::<u32>()
                 .unwrap();
-            let real_width = _real_box[2];
-            let real_width = real_width[0..real_width.len() - 2].parse::<u32>().unwrap();
+            let physical_width = physical_box[2];
+            let physical_width = physical_width[0..physical_width.len() - 2]
+                .parse::<u32>()
+                .unwrap();
+
+            let pixel_box = monitor[2]
+                .split_once('+')
+                .or_else(|| monitor[3].split_once('+'));
             let dimensions: &str;
-            match _box {
+            let positions: &str;
+            match pixel_box {
                 None => continue,
-                Some(_box) => dimensions = _box.0,
+                Some(_box) => {
+                    dimensions = _box.0;
+                    positions = _box.1;
+                }
             }
-            if let None = _box {
+            if let None = pixel_box {
                 continue;
-            } else {
             }
 
             let mut items = dimensions.split('x');
-            let width = items
+            let pixel_width = items
                 .next()
                 .expect("failed to get width")
                 .parse::<u32>()
                 .expect("malformed width");
-            let height = items
+            let pixel_height = items
                 .next()
                 .expect("failed to get height")
                 .parse::<u32>()
                 .expect("malformed height");
 
+            let mut items = positions.split('+');
+            let x = items
+                .next()
+                .expect("failed to get x")
+                .parse::<u32>()
+                .expect("malformed x");
+            let y = items
+                .next()
+                .expect("failed to get y")
+                .parse::<u32>()
+                .expect("malformed y");
+
             monitor_structs.push(Monitor {
                 name,
-                pixel_width: width,
-                pixel_height: height,
-                physical_width: real_width,
-                physical_height: real_height,
+                pixel_width,
+                pixel_height,
+                physical_width,
+                physical_height,
+                x,
+                y,
             });
         }
     }
