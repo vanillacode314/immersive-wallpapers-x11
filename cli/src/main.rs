@@ -67,6 +67,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let img = ImageReader::open(&args.file_path)?
         .decode()?
         .resize_to_fill(total_width, max_height, imageops::FilterType::Lanczos3);
+    let mut last_bezel_x = 0;
     for monitor in monitors.iter() {
         let scaling_factor = monitor.dpi() / min_dpi;
         let width = monitor.pixel_width;
@@ -82,7 +83,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         img.crop_imm(monitor.x, monitor.y, width, height)
             .resize_to_fill(scaled_width, scaled_height, imageops::FilterType::Lanczos3)
             .crop_imm(
-                0,
+                last_bezel_x + monitor.bezel_x,
                 (monitor.y as f64 * scaling_factor as f64) as u32 + monitor.bezel_y,
                 width,
                 height,
@@ -95,6 +96,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .arg("--maximize")
             .arg(&file_path)
             .output()?;
+        last_bezel_x = monitor.bezel_x;
     }
     Ok(())
 }
@@ -169,7 +171,8 @@ where
                     .unwrap_or(["0", "0"])
             } else {
                 ["0", "0"]
-            }.map(|value| value.parse::<u32>().expect("malformed bezel value"));
+            }
+            .map(|value| value.parse::<u32>().expect("malformed bezel value"));
 
             monitor_structs.push(Monitor {
                 name,
