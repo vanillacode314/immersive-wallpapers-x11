@@ -1,15 +1,21 @@
-// Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-// Learn more about Tauri commands at https://tauri.app/v1/guides/features/command
-#[tauri::command]
-fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
+use immersive_wallpapers_x11::{get_size, set_wallpaper};
+
+#[tauri::command(async)]
+fn get_size_cmd() -> Vec<immersive_wallpapers_x11::Monitor> {
+    get_size().unwrap()
+}
+
+#[tauri::command(async)]
+fn set_wallpaper_cmd(path: String, scale: f64, top: u32, left: u32) {
+    let monitors = get_size().unwrap();
+    set_wallpaper(path, scale, top, left, &monitors).unwrap();
 }
 
 fn main() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![greet])
+        .invoke_handler(tauri::generate_handler![get_size_cmd, set_wallpaper_cmd])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

@@ -1,5 +1,6 @@
 import { defineConfig } from "vite";
 import solidPlugin from "vite-plugin-solid";
+import AutoImport from "unplugin-auto-import/vite";
 
 const mobile =
   process.env.TAURI_PLATFORM === "android" ||
@@ -7,7 +8,19 @@ const mobile =
 
 // https://vitejs.dev/config/
 export default defineConfig(async () => ({
-  plugins: [solidPlugin()],
+  plugins: [
+    AutoImport({
+      imports: [
+        "solid-js",
+        {
+          zod: ["z"],
+          clsx: ["clsx"],
+        },
+      ],
+      dts: "src/auto-imports.d.ts",
+    }),
+    solidPlugin(),
+  ],
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   // prevent vite from obscuring rust errors
